@@ -134,6 +134,54 @@
   }
   .btn-primary:hover{ filter:brightness(1.05); }
 
+  /* ---------- Category management ---------- */
+  #categoryList{ display:flex; flex-direction:column; gap:6px; }
+  .category-row{
+    display:flex; align-items:center; gap:6px;
+  }
+  .category-row input[type="text"]{
+    flex:1; min-width:0;
+    font-family:'Inter', sans-serif;
+    font-size:13.5px;
+    padding:8px 10px;
+    border-radius:8px;
+    border:1px solid var(--border);
+    background:var(--surface);
+    color:var(--ink);
+  }
+  .category-row input[type="text"]:disabled{
+    background:var(--surface-2); color:var(--ink-muted);
+  }
+  .category-row-delete{
+    background:none; border:none; cursor:pointer;
+    color:var(--ink-muted); padding:6px; flex-shrink:0;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .category-row-delete:hover{ color:var(--danger); }
+  .category-row-delete svg{ width:16px; height:16px; }
+  .add-category-form{
+    display:flex; gap:6px; margin-top:2px;
+  }
+  .add-category-form input{
+    flex:1; min-width:0;
+    font-family:'Inter', sans-serif;
+    font-size:13.5px;
+    padding:8px 10px;
+    border-radius:8px;
+    border:1px solid var(--border);
+    background:var(--surface);
+    color:var(--ink);
+  }
+  .add-category-form button{
+    font-family:'Inter', sans-serif;
+    font-size:13px; font-weight:600;
+    background:var(--accent); color:#fff;
+    border:none; border-radius:8px;
+    padding:8px 12px; cursor:pointer;
+    flex-shrink:0;
+  }
+  .add-category-form button:hover{ filter:brightness(1.05); }
+
   /* ---------- Main ---------- */
   main{
     max-width:640px; margin:0 auto; padding:18px 14px 40px;
@@ -285,6 +333,15 @@
   </label>
 
   <div class="settings-section">
+    <span class="settings-label">Categories</span>
+    <div id="categoryList"></div>
+    <form id="addCategoryForm" class="add-category-form">
+      <input type="text" id="newCategoryInput" placeholder="New category name" required>
+      <button type="submit">Add</button>
+    </form>
+  </div>
+
+  <div class="settings-section">
     <span class="settings-label">Data</span>
     <button class="btn" id="exportBtn">
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16"/></svg>
@@ -305,13 +362,15 @@
   "use strict";
 
   var STORAGE_KEY = "daydot_items_v1";
-  var CATEGORIES = ["Dairy","Meat","Vegetables","Fruits","Leftovers","Other"];
+  var CATEGORY_STORAGE_KEY = "daydot_categories_v1";
+  var DEFAULT_CATEGORIES = ["Dairy","Meat","Vegetables","Fruits","Leftovers","Other"];
   var WEEKDAY_ABBR = ["sun","mon","tue","wed","thu","fri","sat"];
   var WEEKDAY_LABEL = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
   var MONTH = function(n){ return String(n).padStart(2,"0"); };
 
   var state = {
     items: loadItems(),
+    categories: loadCategories(),
     editMode: false,
     dragId: null
   };
@@ -335,6 +394,26 @@
     }catch(e){
       console.error("Failed to save items", e);
       alert("Couldn't save your data. Your browser storage may be full.");
+    }
+  }
+  function loadCategories(){
+    try{
+      var raw = localStorage.getItem(CATEGORY_STORAGE_KEY);
+      if(!raw) return DEFAULT_CATEGORIES.slice();
+      var parsed = JSON.parse(raw);
+      if(!Array.isArray(parsed) || parsed.length === 0) return DEFAULT_CATEGORIES.slice();
+      return parsed;
+    }catch(e){
+      console.error("Failed to load categories", e);
+      return DEFAULT_CATEGORIES.slice();
+    }
+  }
+  function saveCategories(){
+    try{
+      localStorage.setItem(CATEGORY_STORAGE_KEY, JSON.stringify(state.categories));
+    }catch(e){
+      console.error("Failed to save categories", e);
+      alert("Couldn't save your categories. Your browser storage may be full.");
     }
   }
 
@@ -376,13 +455,15 @@
     app.classList.toggle("edit-mode", state.editMode);
 
     var visibleCats = state.editMode
-      ? CATEGORIES
-      : CATEGORIES.filter(function(c){ return itemsByCategory(c).length > 0; });
+      ? state.categories
+      : state.categories.filter(function(c){ return itemsByCategory(c).length > 0; });
 
     if(visibleCats.length === 0){
       var empty = document.createElement("div");
       empty.className = "empty-state";
-      empty.innerHTML = "<strong>No items yet</strong>Open Settings and turn on Edit mode to add your first item.";
+      empty.innerHTML = state.categories.length === 0
+        ? "<strong>No categories yet</strong>Open Settings and add a category to get started."
+        : "<strong>No items yet</strong>Open Settings and turn on Edit mode to add your first item.";
       app.appendChild(empty);
       return;
     }
@@ -439,6 +520,76 @@
       section.appendChild(list);
       app.appendChild(section);
     });
+
+    renderCategorySettings();
+  }
+
+  function renderCategorySettings(){
+    var wrap = document.getElementById("categoryList");
+    if(!wrap) return;
+    wrap.innerHTML = "";
+    state.categories.forEach(function(cat){
+      var row = document.createElement("div");
+      row.className = "category-row";
+
+      var input = document.createElement("input");
+      input.type = "text";
+      input.value = cat;
+      input.addEventListener("change", function(){
+        renameCategory(cat, input.value.trim());
+      });
+      row.appendChild(input);
+
+      var del = document.createElement("button");
+      del.className = "category-row-delete";
+      del.setAttribute("aria-label", "Delete category " + cat);
+      del.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6h16z"/></svg>';
+      del.addEventListener("click", function(){ deleteCategory(cat); });
+      row.appendChild(del);
+
+      wrap.appendChild(row);
+    });
+  }
+
+  function renameCategory(oldName, newName){
+    if(!newName || newName === oldName){ renderCategorySettings(); return; }
+    if(state.categories.indexOf(newName) !== -1){
+      alert('A category named "' + newName + '" already exists.');
+      renderCategorySettings();
+      return;
+    }
+    var idx = state.categories.indexOf(oldName);
+    if(idx === -1) return;
+    state.categories[idx] = newName;
+    state.items.forEach(function(item){
+      if(item.category === oldName) item.category = newName;
+    });
+    saveCategories();
+    saveItems();
+    render();
+  }
+
+  function deleteCategory(name){
+    if(state.categories.length <= 1){
+      alert("You need at least one category.");
+      return;
+    }
+    var affected = state.items.filter(function(i){ return i.category === name; });
+    var msg = affected.length > 0
+      ? 'Delete "' + name + '"? ' + affected.length + ' item(s) in it will move to another category.'
+      : 'Delete "' + name + '"?';
+    if(!confirm(msg)) return;
+
+    var remaining = state.categories.filter(function(c){ return c !== name; });
+    var fallback = remaining.indexOf("Other") !== -1 ? "Other" : remaining[0];
+
+    state.items.forEach(function(item){
+      if(item.category === name) item.category = fallback;
+    });
+    state.categories = remaining;
+    saveCategories();
+    saveItems();
+    render();
   }
 
   function getDragAfterElement(container, y){
@@ -565,6 +716,22 @@
 
   editModeToggle.addEventListener("change", function(){
     state.editMode = editModeToggle.checked;
+    render();
+  });
+
+  var addCategoryForm = document.getElementById("addCategoryForm");
+  var newCategoryInput = document.getElementById("newCategoryInput");
+  addCategoryForm.addEventListener("submit", function(e){
+    e.preventDefault();
+    var name = newCategoryInput.value.trim();
+    if(!name) return;
+    if(state.categories.indexOf(name) !== -1){
+      alert('A category named "' + name + '" already exists.');
+      return;
+    }
+    state.categories.push(name);
+    saveCategories();
+    newCategoryInput.value = "";
     render();
   });
 
