@@ -1,0 +1,615 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Day Dot — Shelf Life Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg: #EEF1EC;
+    --surface: #FFFFFF;
+    --surface-2: #F5F7F3;
+    --ink: #1E2422;
+    --ink-muted: #6B746E;
+    --border: #DBE0D9;
+    --accent: #3A6B63;
+    --accent-ink: #FFFFFF;
+    --danger: #B4443C;
+
+    --mon: #3B6FA0;
+    --tue: #C99A2E;
+    --wed: #B4443C;
+    --thu: #7A5340;
+    --fri: #4C8C58;
+    --sat: #C97A2E;
+    --sun: #1F2124;
+
+    --radius: 10px;
+    --shadow: 0 1px 2px rgba(20,30,25,0.06), 0 4px 14px rgba(20,30,25,0.05);
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--ink);
+    font-family:'Inter', system-ui, sans-serif;
+    -webkit-font-smoothing:antialiased;
+    padding-bottom:60px;
+  }
+
+  /* ---------- Top bar ---------- */
+  #topbar{
+    position:sticky; top:0; z-index:30;
+    display:flex; align-items:center; justify-content:space-between;
+    background:var(--ink);
+    color:#F4F6F2;
+    padding:12px 16px;
+    box-shadow:var(--shadow);
+  }
+  #clock{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:15px;
+    font-weight:600;
+    letter-spacing:0.02em;
+  }
+  #settingsBtn{
+    background:none; border:none; cursor:pointer;
+    padding:6px; border-radius:8px;
+    display:flex; align-items:center; justify-content:center;
+    color:#F4F6F2;
+  }
+  #settingsBtn:hover{ background:rgba(255,255,255,0.1); }
+  #settingsBtn svg{ width:22px; height:22px; }
+
+  /* ---------- Settings panel ---------- */
+  #overlay{
+    position:fixed; inset:0; background:rgba(15,20,17,0.45);
+    z-index:40; display:none;
+  }
+  #overlay.show{ display:block; }
+  #settingsPanel{
+    position:fixed; top:0; right:0; height:100%;
+    width:min(340px, 88vw);
+    background:var(--surface);
+    z-index:50;
+    box-shadow:-8px 0 24px rgba(0,0,0,0.15);
+    transform:translateX(100%);
+    transition:transform .25s ease;
+    padding:20px;
+    display:flex; flex-direction:column; gap:20px;
+  }
+  #settingsPanel.show{ transform:translateX(0); }
+  #settingsPanel h2{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:19px; margin:0;
+  }
+  .settings-close{
+    position:absolute; top:16px; right:16px;
+    background:none; border:none; font-size:20px; cursor:pointer; color:var(--ink-muted);
+  }
+  .toggle-row{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:14px 14px;
+    background:var(--surface-2);
+    border-radius:var(--radius);
+    border:1px solid var(--border);
+  }
+  .toggle-row span{ font-weight:500; font-size:14px; }
+  .switch{ position:relative; width:42px; height:24px; flex-shrink:0; }
+  .switch input{ opacity:0; width:0; height:0; }
+  .slider{
+    position:absolute; inset:0; background:#C7CDC5; border-radius:999px;
+    cursor:pointer; transition:.2s;
+  }
+  .slider:before{
+    content:""; position:absolute; width:18px; height:18px; left:3px; top:3px;
+    background:white; border-radius:50%; transition:.2s;
+  }
+  .switch input:checked + .slider{ background:var(--accent); }
+  .switch input:checked + .slider:before{ transform:translateX(18px); }
+
+  .settings-section{ display:flex; flex-direction:column; gap:8px; }
+  .settings-label{
+    font-size:11px; text-transform:uppercase; letter-spacing:0.08em;
+    color:var(--ink-muted); font-weight:600;
+  }
+  .btn{
+    font-family:'Inter', sans-serif;
+    font-size:14px; font-weight:500;
+    padding:11px 14px;
+    border-radius:var(--radius);
+    border:1px solid var(--border);
+    background:var(--surface);
+    cursor:pointer;
+    text-align:left;
+    display:flex; align-items:center; gap:10px;
+  }
+  .btn:hover{ background:var(--surface-2); }
+  .btn-primary{
+    background:var(--accent); color:var(--accent-ink); border-color:var(--accent);
+  }
+  .btn-primary:hover{ filter:brightness(1.05); }
+
+  /* ---------- Main ---------- */
+  main{
+    max-width:640px; margin:0 auto; padding:18px 14px 40px;
+  }
+  .empty-state{
+    text-align:center; color:var(--ink-muted);
+    padding:60px 20px; font-size:14px; line-height:1.6;
+  }
+  .empty-state strong{ display:block; color:var(--ink); font-size:16px; margin-bottom:6px; font-family:'Space Grotesk', sans-serif; }
+
+  .category{
+    margin-bottom:22px;
+  }
+  .category-header{
+    display:flex; align-items:center; gap:8px;
+    padding:2px 4px 10px;
+  }
+  .category-dot{ width:8px; height:8px; border-radius:50%; background:var(--accent); flex-shrink:0; }
+  .category-title{
+    font-family:'Space Grotesk', sans-serif;
+    font-size:14px; font-weight:600;
+    letter-spacing:0.02em;
+    text-transform:uppercase;
+    color:var(--ink);
+  }
+  .category-count{
+    font-size:12px; color:var(--ink-muted); font-family:'IBM Plex Mono', monospace;
+  }
+
+  .item-list{
+    background:var(--surface);
+    border:1px solid var(--border);
+    border-radius:var(--radius);
+    overflow:hidden;
+    box-shadow:var(--shadow);
+  }
+  .item-row{
+    display:flex; align-items:center; gap:10px;
+    padding:12px 14px;
+    border-bottom:1px solid var(--border);
+    background:var(--surface);
+  }
+  .item-row:last-child{ border-bottom:none; }
+  .item-row.dragging{ opacity:0.4; }
+  .drag-handle{
+    cursor:grab; color:var(--ink-muted); flex-shrink:0;
+    display:none;
+    touch-action:none;
+    padding:2px;
+  }
+  .edit-mode .drag-handle{ display:flex; }
+  .drag-handle svg{ width:16px; height:16px; }
+
+  .item-main{ flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; }
+  .item-product{ font-weight:600; font-size:14.5px; color:var(--ink); overflow-wrap:anywhere; }
+  .item-shelflife{ font-size:12px; color:var(--ink-muted); font-family:'IBM Plex Mono', monospace; }
+
+  .day-dot{
+    font-family:'IBM Plex Mono', monospace;
+    font-size:11.5px;
+    font-weight:600;
+    color:#fff;
+    padding:6px 9px;
+    border-radius:8px;
+    white-space:nowrap;
+    letter-spacing:0.01em;
+    flex-shrink:0;
+  }
+  .day-dot.mon{ background:var(--mon); }
+  .day-dot.tue{ background:var(--tue); }
+  .day-dot.wed{ background:var(--wed); }
+  .day-dot.thu{ background:var(--thu); }
+  .day-dot.fri{ background:var(--fri); }
+  .day-dot.sat{ background:var(--sat); }
+  .day-dot.sun{ background:var(--sun); }
+
+  .delete-btn{
+    display:none; background:none; border:none; cursor:pointer;
+    color:var(--ink-muted); padding:4px; flex-shrink:0;
+  }
+  .edit-mode .delete-btn{ display:flex; }
+  .delete-btn:hover{ color:var(--danger); }
+  .delete-btn svg{ width:17px; height:17px; }
+
+  /* ---------- Add form ---------- */
+  .add-form{
+    display:none;
+    padding:12px 14px;
+    background:var(--surface-2);
+    border-top:1px solid var(--border);
+    gap:8px;
+    flex-wrap:wrap;
+    align-items:center;
+  }
+  .edit-mode .add-form{ display:flex; }
+  .add-form input{
+    font-family:'Inter', sans-serif;
+    font-size:14px;
+    padding:8px 10px;
+    border-radius:8px;
+    border:1px solid var(--border);
+    background:var(--surface);
+    color:var(--ink);
+  }
+  .add-form input[name="product"]{ flex:2; min-width:110px; }
+  .add-form input[name="shelfLife"]{ flex:1; min-width:70px; }
+  .add-form button{
+    font-family:'Inter', sans-serif;
+    font-size:13px; font-weight:600;
+    background:var(--accent); color:#fff;
+    border:none; border-radius:8px;
+    padding:8px 12px; cursor:pointer;
+    flex-shrink:0;
+  }
+  .add-form button:hover{ filter:brightness(1.05); }
+
+  .sr-only{
+    position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0);
+  }
+
+  @media (prefers-reduced-motion: reduce){
+    #settingsPanel{ transition:none; }
+  }
+</style>
+</head>
+<body>
+
+<header id="topbar">
+  <div id="clock">—</div>
+  <button id="settingsBtn" aria-label="Open settings">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+      <circle cx="12" cy="12" r="3"></circle>
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+    </svg>
+  </button>
+</header>
+
+<div id="overlay"></div>
+<aside id="settingsPanel" aria-label="Settings">
+  <button class="settings-close" id="closeSettings" aria-label="Close settings">✕</button>
+  <h2>Settings</h2>
+
+  <label class="toggle-row">
+    <span>Edit mode</span>
+    <span class="switch">
+      <input type="checkbox" id="editModeToggle">
+      <span class="slider"></span>
+    </span>
+  </label>
+
+  <div class="settings-section">
+    <span class="settings-label">Data</span>
+    <button class="btn" id="exportBtn">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 21h16"/></svg>
+      Export data (.json)
+    </button>
+    <button class="btn" id="importBtn">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 21V9m0 0l-4 4m4-4l4 4M4 3h16"/></svg>
+      Import data (.json)
+    </button>
+    <input type="file" id="importFile" accept="application/json" class="sr-only">
+  </div>
+</aside>
+
+<main id="app"></main>
+
+<script>
+(function(){
+  "use strict";
+
+  var STORAGE_KEY = "daydot_items_v1";
+  var CATEGORIES = ["Dairy","Meat","Vegetables","Fruits","Leftovers","Other"];
+  var WEEKDAY_ABBR = ["sun","mon","tue","wed","thu","fri","sat"];
+  var WEEKDAY_LABEL = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+  var MONTH = function(n){ return String(n).padStart(2,"0"); };
+
+  var state = {
+    items: loadItems(),
+    editMode: false,
+    dragId: null
+  };
+
+  // ---------- storage ----------
+  function loadItems(){
+    try{
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if(!raw) return [];
+      var parsed = JSON.parse(raw);
+      if(!Array.isArray(parsed)) return [];
+      return parsed;
+    }catch(e){
+      console.error("Failed to load items", e);
+      return [];
+    }
+  }
+  function saveItems(){
+    try{
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state.items));
+    }catch(e){
+      console.error("Failed to save items", e);
+      alert("Couldn't save your data. Your browser storage may be full.");
+    }
+  }
+
+  // ---------- formatting ----------
+  function formatDayDot(iso){
+    var d = new Date(iso);
+    var day = WEEKDAY_LABEL[d.getDay()];
+    var mm = MONTH(d.getMonth()+1);
+    var dd = MONTH(d.getDate());
+    var h = d.getHours();
+    var ampm = h >= 12 ? "PM" : "AM";
+    var h12 = h % 12; if(h12 === 0) h12 = 12;
+    var min = MONTH(d.getMinutes());
+    return day + " " + mm + "/" + dd + " " + MONTH(h12) + ":" + min + " " + ampm;
+  }
+  function weekdayClass(iso){
+    var d = new Date(iso);
+    return WEEKDAY_ABBR[d.getDay()];
+  }
+  // ---------- clock ----------
+  function tickClock(){
+    var el = document.getElementById("clock");
+    el.textContent = formatDayDot(new Date());
+  }
+  tickClock();
+  setInterval(tickClock, 1000 * 10);
+
+  // ---------- rendering ----------
+  var app = document.getElementById("app");
+
+  function itemsByCategory(cat){
+    return state.items
+      .filter(function(i){ return i.category === cat; })
+      .sort(function(a,b){ return a.order - b.order; });
+  }
+
+  function render(){
+    app.innerHTML = "";
+    app.classList.toggle("edit-mode", state.editMode);
+
+    var visibleCats = state.editMode
+      ? CATEGORIES
+      : CATEGORIES.filter(function(c){ return itemsByCategory(c).length > 0; });
+
+    if(visibleCats.length === 0){
+      var empty = document.createElement("div");
+      empty.className = "empty-state";
+      empty.innerHTML = "<strong>No items yet</strong>Open Settings and turn on Edit mode to add your first item.";
+      app.appendChild(empty);
+      return;
+    }
+
+    visibleCats.forEach(function(cat){
+      var items = itemsByCategory(cat);
+      if(!state.editMode && items.length === 0) return;
+
+      var section = document.createElement("section");
+      section.className = "category";
+
+      var header = document.createElement("div");
+      header.className = "category-header";
+      header.innerHTML =
+        '<span class="category-dot"></span>' +
+        '<span class="category-title">' + cat + '</span>' +
+        '<span class="category-count">' + items.length + '</span>';
+      section.appendChild(header);
+
+      var list = document.createElement("div");
+      list.className = "item-list";
+      list.dataset.category = cat;
+
+      items.forEach(function(item){
+        list.appendChild(renderRow(item));
+      });
+
+      if(items.length === 0 && state.editMode){
+        var note = document.createElement("div");
+        note.style.cssText = "padding:14px;font-size:13px;color:var(--ink-muted);";
+        note.textContent = "No items in this category yet.";
+        list.appendChild(note);
+      }
+
+      list.appendChild(renderAddForm(cat));
+
+      // drag & drop on the list container
+      list.addEventListener("dragover", function(e){
+        e.preventDefault();
+        var dragging = list.querySelector(".item-row.dragging");
+        if(!dragging) return;
+        var after = getDragAfterElement(list, e.clientY);
+        if(after == null){
+          list.insertBefore(dragging, list.querySelector(".add-form"));
+        }else{
+          list.insertBefore(dragging, after);
+        }
+      });
+      list.addEventListener("drop", function(e){
+        e.preventDefault();
+        persistOrderFromDOM(list, cat);
+      });
+
+      section.appendChild(list);
+      app.appendChild(section);
+    });
+  }
+
+  function getDragAfterElement(container, y){
+    var rows = Array.prototype.slice.call(container.querySelectorAll(".item-row:not(.dragging)"));
+    var result = { offset: -Infinity, element: null };
+    rows.forEach(function(row){
+      var box = row.getBoundingClientRect();
+      var offset = y - box.top - box.height/2;
+      if(offset < 0 && offset > result.offset){
+        result = { offset: offset, element: row };
+      }
+    });
+    return result.element;
+  }
+
+  function persistOrderFromDOM(list, cat){
+    var rows = Array.prototype.slice.call(list.querySelectorAll(".item-row"));
+    rows.forEach(function(row, idx){
+      var item = state.items.find(function(i){ return i.id === row.dataset.id; });
+      if(item) item.order = idx;
+    });
+    saveItems();
+  }
+
+  function renderRow(item){
+    var row = document.createElement("div");
+    row.className = "item-row";
+    row.dataset.id = item.id;
+    row.draggable = state.editMode;
+
+    row.addEventListener("dragstart", function(){
+      row.classList.add("dragging");
+    });
+    row.addEventListener("dragend", function(){
+      row.classList.remove("dragging");
+    });
+
+    var handle = document.createElement("div");
+    handle.className = "drag-handle";
+    handle.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>';
+    row.appendChild(handle);
+
+    var main = document.createElement("div");
+    main.className = "item-main";
+    main.innerHTML =
+      '<span class="item-product"></span>' +
+      '<span class="item-shelflife"></span>';
+    main.querySelector(".item-product").textContent = item.product;
+    main.querySelector(".item-shelflife").textContent = "Shelf life: " + item.shelfLifeDays + (item.shelfLifeDays == 1 ? " day" : " days");
+    row.appendChild(main);
+
+    var dot = document.createElement("span");
+    dot.className = "day-dot " + weekdayClass(item.dayDot);
+    dot.textContent = formatDayDot(item.dayDot);
+    row.appendChild(dot);
+
+    var del = document.createElement("button");
+    del.className = "delete-btn";
+    del.setAttribute("aria-label", "Delete " + item.product);
+    del.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6h16z"/></svg>';
+    del.addEventListener("click", function(){
+      if(confirm('Delete "' + item.product + '"?')){
+        state.items = state.items.filter(function(i){ return i.id !== item.id; });
+        saveItems();
+        render();
+      }
+    });
+    row.appendChild(del);
+
+    return row;
+  }
+
+  function renderAddForm(cat){
+    var form = document.createElement("form");
+    form.className = "add-form";
+    form.innerHTML =
+      '<input type="text" name="product" placeholder="Product name" required>' +
+      '<input type="number" name="shelfLife" placeholder="Days" min="0" step="1" required>' +
+      '<button type="submit">Add</button>';
+    form.addEventListener("submit", function(e){
+      e.preventDefault();
+      var product = form.product.value.trim();
+      var days = parseInt(form.shelfLife.value, 10);
+      if(!product || isNaN(days)) return;
+
+      var now = new Date();
+      var dayDot = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+
+      var existingOrders = itemsByCategory(cat).map(function(i){ return i.order; });
+      var nextOrder = existingOrders.length ? Math.max.apply(null, existingOrders) + 1 : 0;
+
+      state.items.push({
+        id: "id_" + Date.now() + "_" + Math.random().toString(36).slice(2,8),
+        product: product,
+        category: cat,
+        shelfLifeDays: days,
+        dayDot: dayDot.toISOString(),
+        order: nextOrder
+      });
+      saveItems();
+      render();
+    });
+    return form;
+  }
+
+  // ---------- settings panel ----------
+  var overlay = document.getElementById("overlay");
+  var panel = document.getElementById("settingsPanel");
+  var settingsBtn = document.getElementById("settingsBtn");
+  var closeSettings = document.getElementById("closeSettings");
+  var editModeToggle = document.getElementById("editModeToggle");
+
+  function openSettings(){
+    overlay.classList.add("show");
+    panel.classList.add("show");
+  }
+  function closeSettingsPanel(){
+    overlay.classList.remove("show");
+    panel.classList.remove("show");
+  }
+  settingsBtn.addEventListener("click", openSettings);
+  closeSettings.addEventListener("click", closeSettingsPanel);
+  overlay.addEventListener("click", closeSettingsPanel);
+
+  editModeToggle.addEventListener("change", function(){
+    state.editMode = editModeToggle.checked;
+    render();
+  });
+
+  // ---------- export / import ----------
+  document.getElementById("exportBtn").addEventListener("click", function(){
+    var blob = new Blob([JSON.stringify(state.items, null, 2)], { type: "application/json" });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement("a");
+    var stamp = new Date().toISOString().slice(0,10);
+    a.href = url;
+    a.download = "day-dot-export-" + stamp + ".json";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+
+  var importBtn = document.getElementById("importBtn");
+  var importFile = document.getElementById("importFile");
+  importBtn.addEventListener("click", function(){ importFile.click(); });
+  importFile.addEventListener("change", function(){
+    var file = importFile.files[0];
+    if(!file) return;
+    var reader = new FileReader();
+    reader.onload = function(e){
+      try{
+        var data = JSON.parse(e.target.result);
+        if(!Array.isArray(data)) throw new Error("Invalid file format");
+        var ok = confirm("Import " + data.length + " item(s)? This will replace your current data.");
+        if(ok){
+          state.items = data;
+          saveItems();
+          render();
+        }
+      }catch(err){
+        alert("Couldn't import this file. Make sure it's a Day Dot export (.json).");
+      }
+      importFile.value = "";
+    };
+    reader.readAsText(file);
+  });
+
+  // ---------- init ----------
+  render();
+})();
+</script>
+</body>
+</html>
