@@ -548,18 +548,27 @@
       DAY_CLASSES.forEach(function(c){ topbar.classList.remove(c); });
       topbar.classList.add(current);
     }
+
+    refreshDayDots(now);
   }
   tickClock();
   setInterval(tickClock, 1000 * 10);
 
-  // Keep the item list's Day Dot display live even if the page is left open
-  // for a long time (e.g. across a day change). Skipped while the user is
-  // actively editing an item, so it never overwrites in-progress input.
-  setInterval(function(){
-    if(state.editingItemId == null){
-      render();
-    }
-  }, 1000 * 60);
+  // Day Dot is a derived value (now + shelf life), not a stored point in
+  // time, so it must keep recalculating for as long as the page stays open.
+  // This updates just the day-dot badges in place (not a full re-render),
+  // so it never disrupts an in-progress drag or edit.
+  function refreshDayDots(now){
+    document.querySelectorAll(".item-row[data-id]").forEach(function(row){
+      var item = state.items.find(function(i){ return i.id === row.dataset.id; });
+      if(!item) return;
+      var dot = row.querySelector(".day-dot");
+      if(!dot) return;
+      var liveDayDot = computeDayDot(item.shelfLifeValue, item.shelfLifeUnit, now);
+      dot.className = "day-dot " + weekdayClass(liveDayDot);
+      dot.textContent = formatDayDot(liveDayDot);
+    });
+  }
 
   // ---------- rendering ----------
   var app = document.getElementById("app");
@@ -817,8 +826,9 @@
     row.appendChild(main);
 
     var dot = document.createElement("span");
-    dot.className = "day-dot " + weekdayClass(item.dayDot);
-    dot.textContent = formatDayDot(item.dayDot);
+    var liveDayDot = computeDayDot(item.shelfLifeValue, item.shelfLifeUnit, new Date());
+    dot.className = "day-dot " + weekdayClass(liveDayDot);
+    dot.textContent = formatDayDot(liveDayDot);
     row.appendChild(dot);
 
     var edit = document.createElement("button");
@@ -877,7 +887,6 @@
       item.product = product;
       item.shelfLifeValue = value;
       item.shelfLifeUnit = unit;
-      item.dayDot = computeDayDot(value, unit, new Date()).toISOString();
 
       state.editingItemId = null;
       saveItems();
@@ -902,9 +911,6 @@
       var unit = form.unit.value;
       if(!product || isNaN(value)) return;
 
-      var now = new Date();
-      var dayDot = computeDayDot(value, unit, now);
-
       var existingOrders = itemsByCategory(cat).map(function(i){ return i.order; });
       var nextOrder = existingOrders.length ? Math.max.apply(null, existingOrders) + 1 : 0;
 
@@ -914,7 +920,6 @@
         category: cat,
         shelfLifeValue: value,
         shelfLifeUnit: unit,
-        dayDot: dayDot.toISOString(),
         order: nextOrder
       });
       saveItems();
