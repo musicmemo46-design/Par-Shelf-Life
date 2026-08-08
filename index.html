@@ -552,6 +552,15 @@
   tickClock();
   setInterval(tickClock, 1000 * 10);
 
+  // Keep the item list's Day Dot display live even if the page is left open
+  // for a long time (e.g. across a day change). Skipped while the user is
+  // actively editing an item, so it never overwrites in-progress input.
+  setInterval(function(){
+    if(state.editingItemId == null){
+      render();
+    }
+  }, 1000 * 60);
+
   // ---------- rendering ----------
   var app = document.getElementById("app");
 
