@@ -448,23 +448,25 @@
   };
 
   // ---------- storage ----------
+  function migrateItem(item){
+    if(item.shelfLifeUnit == null){
+      if(item.shelfLifeDays != null){
+        item.shelfLifeValue = item.shelfLifeDays;
+        item.shelfLifeUnit = "days";
+      }else{
+        item.shelfLifeValue = item.shelfLifeValue != null ? item.shelfLifeValue : 0;
+        item.shelfLifeUnit = "days";
+      }
+    }
+    return item;
+  }
   function loadItems(){
     try{
       var raw = localStorage.getItem(STORAGE_KEY);
       if(!raw) return [];
       var parsed = JSON.parse(raw);
       if(!Array.isArray(parsed)) return [];
-      parsed.forEach(function(item){
-        if(item.shelfLifeUnit == null){
-          if(item.shelfLifeDays != null){
-            item.shelfLifeValue = item.shelfLifeDays;
-            item.shelfLifeUnit = "days";
-          }else{
-            item.shelfLifeValue = item.shelfLifeValue != null ? item.shelfLifeValue : 0;
-            item.shelfLifeUnit = "days";
-          }
-        }
-      });
+      parsed.forEach(migrateItem);
       return parsed;
     }catch(e){
       console.error("Failed to load items", e);
@@ -955,9 +957,25 @@
     persistCategoryOrderFromDOM(categoryListWrap);
   });
 
+  function ensureCategoriesForItems(){
+    var known = state.categories;
+    var added = false;
+    state.items.forEach(function(item){
+      if(item.category && known.indexOf(item.category) === -1){
+        known.push(item.category);
+        added = true;
+      }
+    });
+    if(added) saveCategories();
+  }
+
   // ---------- export / import ----------
   document.getElementById("exportBtn").addEventListener("click", function(){
-    var blob = new Blob([JSON.stringify(state.items, null, 2)], { type: "application/json" });
+    var payload = {
+      items: state.items,
+      categories: state.categories
+    };
+    var blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     var url = URL.createObjectURL(blob);
     var a = document.createElement("a");
     var stamp = new Date().toISOString().slice(0,10);
@@ -979,11 +997,30 @@
     reader.onload = function(e){
       try{
         var data = JSON.parse(e.target.result);
-        if(!Array.isArray(data)) throw new Error("Invalid file format");
-        var ok = confirm("Import " + data.length + " item(s)? This will replace your current data.");
+
+        var items, categories;
+        if(Array.isArray(data)){
+          // Legacy export: a plain array of items, no categories included.
+          items = data;
+          categories = null;
+        }else if(data && Array.isArray(data.items)){
+          items = data.items;
+          categories = Array.isArray(data.categories) ? data.categories : null;
+        }else{
+          throw new Error("Invalid file format");
+        }
+
+        items.forEach(migrateItem);
+
+        var ok = confirm("Import " + items.length + " item(s)? This will replace your current data.");
         if(ok){
-          state.items = data;
+          state.items = items;
+          if(categories && categories.length > 0){
+            state.categories = categories;
+          }
+          ensureCategoriesForItems();
           saveItems();
+          saveCategories();
           render();
         }
       }catch(err){
@@ -995,6 +1032,7 @@
   });
 
   // ---------- init ----------
+  ensureCategoriesForItems();
   render();
 })();
 </script>
