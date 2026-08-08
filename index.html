@@ -139,6 +139,26 @@
   .category-row{
     display:flex; align-items:center; gap:6px;
   }
+  .category-row.dragging{ opacity:0.4; }
+  .category-drag-handle{
+    cursor:grab; color:var(--ink-muted); flex-shrink:0;
+    display:none;
+    touch-action:none;
+    padding:2px;
+  }
+  .category-drag-handle svg{ width:15px; height:15px; }
+  .category-row-readonly{
+    display:flex; align-items:center;
+    font-size:13.5px; padding:9px 10px;
+    background:var(--surface-2);
+    border:1px solid var(--border);
+    border-radius:8px;
+    color:var(--ink);
+    flex:1;
+  }
+  .settings-hint{
+    font-size:12px; color:var(--ink-muted); line-height:1.5;
+  }
   .category-row input[type="text"]{
     flex:1; min-width:0;
     font-family:'Inter', sans-serif;
@@ -266,6 +286,46 @@
   .delete-btn:hover{ color:var(--danger); }
   .delete-btn svg{ width:17px; height:17px; }
 
+  .edit-btn{
+    display:none; background:none; border:none; cursor:pointer;
+    color:var(--ink-muted); padding:4px; flex-shrink:0;
+  }
+  .edit-mode .edit-btn{ display:flex; }
+  .edit-btn:hover{ color:var(--accent); }
+  .edit-btn svg{ width:16px; height:16px; }
+
+  /* ---------- Item edit form (inline) ---------- */
+  .item-edit-form{
+    display:flex; flex-wrap:wrap; align-items:center; gap:8px;
+    padding:12px 14px;
+    border-bottom:1px solid var(--border);
+    background:var(--surface-2);
+  }
+  .item-edit-form input, .item-edit-form select{
+    font-family:'Inter', sans-serif;
+    font-size:14px;
+    padding:8px 10px;
+    border-radius:8px;
+    border:1px solid var(--border);
+    background:var(--surface);
+    color:var(--ink);
+  }
+  .item-edit-form input[name="product"]{ flex:2; min-width:110px; }
+  .item-edit-form input[name="shelfLife"]{ flex:1; min-width:60px; }
+  .item-edit-form select{ flex:1; min-width:80px; }
+  .item-edit-form .form-actions{ display:flex; gap:6px; width:100%; justify-content:flex-end; }
+  .item-edit-form .save-btn, .item-edit-form .cancel-btn{
+    font-family:'Inter', sans-serif;
+    font-size:13px; font-weight:600;
+    border:none; border-radius:8px;
+    padding:8px 12px; cursor:pointer;
+    flex-shrink:0;
+  }
+  .item-edit-form .save-btn{ background:var(--accent); color:#fff; }
+  .item-edit-form .save-btn:hover{ filter:brightness(1.05); }
+  .item-edit-form .cancel-btn{ background:var(--surface); border:1px solid var(--border); color:var(--ink); }
+  .item-edit-form .cancel-btn:hover{ background:var(--surface-2); }
+
   /* ---------- Add form ---------- */
   .add-form{
     display:none;
@@ -287,7 +347,17 @@
     color:var(--ink);
   }
   .add-form input[name="product"]{ flex:2; min-width:110px; }
-  .add-form input[name="shelfLife"]{ flex:1; min-width:70px; }
+  .add-form input[name="shelfLife"]{ flex:1; min-width:60px; }
+  .add-form select{
+    font-family:'Inter', sans-serif;
+    font-size:14px;
+    padding:8px 10px;
+    border-radius:8px;
+    border:1px solid var(--border);
+    background:var(--surface);
+    color:var(--ink);
+    flex:1; min-width:80px;
+  }
   .add-form button{
     font-family:'Inter', sans-serif;
     font-size:13px; font-weight:600;
@@ -334,6 +404,7 @@
 
   <div class="settings-section">
     <span class="settings-label">Categories</span>
+    <div id="categoryHint" class="settings-hint"></div>
     <div id="categoryList"></div>
     <form id="addCategoryForm" class="add-category-form">
       <input type="text" id="newCategoryInput" placeholder="New category name" required>
@@ -372,6 +443,7 @@
     items: loadItems(),
     categories: loadCategories(),
     editMode: false,
+    editingItemId: null,
     dragId: null
   };
 
@@ -382,6 +454,17 @@
       if(!raw) return [];
       var parsed = JSON.parse(raw);
       if(!Array.isArray(parsed)) return [];
+      parsed.forEach(function(item){
+        if(item.shelfLifeUnit == null){
+          if(item.shelfLifeDays != null){
+            item.shelfLifeValue = item.shelfLifeDays;
+            item.shelfLifeUnit = "days";
+          }else{
+            item.shelfLifeValue = item.shelfLifeValue != null ? item.shelfLifeValue : 0;
+            item.shelfLifeUnit = "days";
+          }
+        }
+      });
       return parsed;
     }catch(e){
       console.error("Failed to load items", e);
@@ -432,6 +515,15 @@
   function weekdayClass(iso){
     var d = new Date(iso);
     return WEEKDAY_ABBR[d.getDay()];
+  }
+  function computeDayDot(value, unit, fromDate){
+    var ms = unit === "hours" ? value * 60 * 60 * 1000 : value * 24 * 60 * 60 * 1000;
+    return new Date(fromDate.getTime() + ms);
+  }
+  function formatShelfLife(item){
+    var unit = item.shelfLifeUnit === "hours" ? "hour" : "day";
+    var val = item.shelfLifeValue;
+    return "Shelf life: " + val + " " + unit + (val == 1 ? "" : "s");
   }
   // ---------- clock ----------
   function tickClock(){
@@ -526,11 +618,43 @@
 
   function renderCategorySettings(){
     var wrap = document.getElementById("categoryList");
+    var hint = document.getElementById("categoryHint");
+    var addForm = document.getElementById("addCategoryForm");
     if(!wrap) return;
     wrap.innerHTML = "";
+
+    hint.textContent = state.editMode
+      ? "Drag to reorder. Rename, or delete a category."
+      : "Turn on Edit mode to reorder, rename, or delete categories.";
+    addForm.style.display = state.editMode ? "flex" : "none";
+
     state.categories.forEach(function(cat){
       var row = document.createElement("div");
       row.className = "category-row";
+      row.dataset.category = cat;
+
+      if(!state.editMode){
+        var readonly = document.createElement("div");
+        readonly.className = "category-row-readonly";
+        readonly.textContent = cat;
+        row.appendChild(readonly);
+        wrap.appendChild(row);
+        return;
+      }
+
+      row.draggable = true;
+      row.addEventListener("dragstart", function(){
+        row.classList.add("dragging");
+      });
+      row.addEventListener("dragend", function(){
+        row.classList.remove("dragging");
+      });
+
+      var handle = document.createElement("div");
+      handle.className = "category-drag-handle";
+      handle.style.display = "flex";
+      handle.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><circle cx="9" cy="6" r="1.5"/><circle cx="9" cy="12" r="1.5"/><circle cx="9" cy="18" r="1.5"/><circle cx="15" cy="6" r="1.5"/><circle cx="15" cy="12" r="1.5"/><circle cx="15" cy="18" r="1.5"/></svg>';
+      row.appendChild(handle);
 
       var input = document.createElement("input");
       input.type = "text";
@@ -549,6 +673,25 @@
 
       wrap.appendChild(row);
     });
+  }
+
+  function getCategoryDragAfterElement(container, y){
+    var rows = Array.prototype.slice.call(container.querySelectorAll(".category-row:not(.dragging)"));
+    var result = { offset: -Infinity, element: null };
+    rows.forEach(function(row){
+      var box = row.getBoundingClientRect();
+      var offset = y - box.top - box.height/2;
+      if(offset < 0 && offset > result.offset){
+        result = { offset: offset, element: row };
+      }
+    });
+    return result.element;
+  }
+
+  function persistCategoryOrderFromDOM(wrap){
+    var rows = Array.prototype.slice.call(wrap.querySelectorAll(".category-row"));
+    state.categories = rows.map(function(row){ return row.dataset.category; });
+    saveCategories();
   }
 
   function renameCategory(oldName, newName){
@@ -615,6 +758,10 @@
   }
 
   function renderRow(item){
+    if(state.editingItemId === item.id){
+      return renderItemEditForm(item);
+    }
+
     var row = document.createElement("div");
     row.className = "item-row";
     row.dataset.id = item.id;
@@ -638,13 +785,23 @@
       '<span class="item-product"></span>' +
       '<span class="item-shelflife"></span>';
     main.querySelector(".item-product").textContent = item.product;
-    main.querySelector(".item-shelflife").textContent = "Shelf life: " + item.shelfLifeDays + (item.shelfLifeDays == 1 ? " day" : " days");
+    main.querySelector(".item-shelflife").textContent = formatShelfLife(item);
     row.appendChild(main);
 
     var dot = document.createElement("span");
     dot.className = "day-dot " + weekdayClass(item.dayDot);
     dot.textContent = formatDayDot(item.dayDot);
     row.appendChild(dot);
+
+    var edit = document.createElement("button");
+    edit.className = "edit-btn";
+    edit.setAttribute("aria-label", "Edit " + item.product);
+    edit.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+    edit.addEventListener("click", function(){
+      state.editingItemId = item.id;
+      render();
+    });
+    row.appendChild(edit);
 
     var del = document.createElement("button");
     del.className = "delete-btn";
@@ -662,21 +819,63 @@
     return row;
   }
 
+  function renderItemEditForm(item){
+    var form = document.createElement("form");
+    form.className = "item-edit-form";
+    form.innerHTML =
+      '<input type="text" name="product" placeholder="Product name" required>' +
+      '<input type="number" name="shelfLife" placeholder="Amount" min="0" step="1" required>' +
+      '<select name="unit"><option value="days">Days</option><option value="hours">Hours</option></select>' +
+      '<div class="form-actions">' +
+        '<button type="button" class="cancel-btn">Cancel</button>' +
+        '<button type="submit" class="save-btn">Save</button>' +
+      '</div>';
+    form.product.value = item.product;
+    form.shelfLife.value = item.shelfLifeValue;
+    form.unit.value = item.shelfLifeUnit === "hours" ? "hours" : "days";
+
+    form.querySelector(".cancel-btn").addEventListener("click", function(){
+      state.editingItemId = null;
+      render();
+    });
+
+    form.addEventListener("submit", function(e){
+      e.preventDefault();
+      var product = form.product.value.trim();
+      var value = parseFloat(form.shelfLife.value);
+      var unit = form.unit.value;
+      if(!product || isNaN(value)) return;
+
+      item.product = product;
+      item.shelfLifeValue = value;
+      item.shelfLifeUnit = unit;
+      item.dayDot = computeDayDot(value, unit, new Date()).toISOString();
+
+      state.editingItemId = null;
+      saveItems();
+      render();
+    });
+
+    return form;
+  }
+
   function renderAddForm(cat){
     var form = document.createElement("form");
     form.className = "add-form";
     form.innerHTML =
       '<input type="text" name="product" placeholder="Product name" required>' +
-      '<input type="number" name="shelfLife" placeholder="Days" min="0" step="1" required>' +
+      '<input type="number" name="shelfLife" placeholder="Amount" min="0" step="1" required>' +
+      '<select name="unit"><option value="days">Days</option><option value="hours">Hours</option></select>' +
       '<button type="submit">Add</button>';
     form.addEventListener("submit", function(e){
       e.preventDefault();
       var product = form.product.value.trim();
-      var days = parseInt(form.shelfLife.value, 10);
-      if(!product || isNaN(days)) return;
+      var value = parseFloat(form.shelfLife.value);
+      var unit = form.unit.value;
+      if(!product || isNaN(value)) return;
 
       var now = new Date();
-      var dayDot = new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+      var dayDot = computeDayDot(value, unit, now);
 
       var existingOrders = itemsByCategory(cat).map(function(i){ return i.order; });
       var nextOrder = existingOrders.length ? Math.max.apply(null, existingOrders) + 1 : 0;
@@ -685,7 +884,8 @@
         id: "id_" + Date.now() + "_" + Math.random().toString(36).slice(2,8),
         product: product,
         category: cat,
-        shelfLifeDays: days,
+        shelfLifeValue: value,
+        shelfLifeUnit: unit,
         dayDot: dayDot.toISOString(),
         order: nextOrder
       });
@@ -716,6 +916,7 @@
 
   editModeToggle.addEventListener("change", function(){
     state.editMode = editModeToggle.checked;
+    if(!state.editMode) state.editingItemId = null;
     render();
   });
 
@@ -733,6 +934,25 @@
     saveCategories();
     newCategoryInput.value = "";
     render();
+  });
+
+  var categoryListWrap = document.getElementById("categoryList");
+  categoryListWrap.addEventListener("dragover", function(e){
+    if(!state.editMode) return;
+    e.preventDefault();
+    var dragging = categoryListWrap.querySelector(".category-row.dragging");
+    if(!dragging) return;
+    var after = getCategoryDragAfterElement(categoryListWrap, e.clientY);
+    if(after == null){
+      categoryListWrap.appendChild(dragging);
+    }else{
+      categoryListWrap.insertBefore(dragging, after);
+    }
+  });
+  categoryListWrap.addEventListener("drop", function(e){
+    if(!state.editMode) return;
+    e.preventDefault();
+    persistCategoryOrderFromDOM(categoryListWrap);
   });
 
   // ---------- export / import ----------
